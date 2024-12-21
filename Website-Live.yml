@@ -1,0 +1,76 @@
+- name: Install and configure Nginx with Let's Encrypt wildcard SSL and HTTP to HTTPS redirect
+  hosts: n0
+  become: true
+  vars:
+    cloudflare_api_key: "Key*************"
+    cloudflare_email: "email**************
+    domain: "n0.be"
+    wildcard_domain: "*.n0.be"
+    acme_home: "/root/.acme.sh"
+    ssl_cert_dir: "/etc/ssl/certs"
+    ssl_key_dir: "/etc/ssl/private"
+  tasks:
+    - name: Install required packages for ACME and Nginx
+      apt:
+        name:
+          - curl
+          - cron
+          - socat
+          - nginx
+        state: present
+        update_cache: yes
+ 
+    - name: Download and install acme.sh
+      shell: |
+        curl https://get.acme.sh | sh
+      args:
+        creates: "{{ acme_home }}/acme.sh"
+ 
+    - name: Set Cloudflare credentials for ACME
+      copy:
+        dest: "{{ acme_home }}/cloudflare.env"
+        content: |
+          CF_Token="{{ cloudflare_api_key }}"
+          CF_Email="{{ cloudflare_email }}"
+        owner: root
+        group: root
+        mode: '0600'
+ 
+    - name: Check if wildcard certificate already exists
+      shell: |
+        {{ acme_home }}/acme.sh --list | grep -q "{{ domain }}"
+      register: cert_check
+      failed_when: false
+ 
+    - name: Force reissue wildcard certificate with Let's Encrypt using ACME
+      shell: |
+        export CF_Token="{{ cloudflare_api_key }}"
+        export CF_Email="{{ cloudflare_email }}"
+        {{ acme_home }}/acme.sh --renew -d "{{ domain }}" -d "{{ wildcard_domain }}" --server letsencrypt --keylength ec-256 --force
+      environment:
+        CF_Token: "{{ cloudflare_api_key }}"
+        CF_Email: "{{ cloudflare_email }}"
+ 
+    - name: Ensure Nginx is running before certificate installation
+      service:
+        name: nginx
+        state: started
+ 
+    - name: Install the wildcard certificate
+      shell: |
+        {{ acme_home }}/acme.sh --install-cert -d "{{ domain }}" \
+        --key-file {{ ssl_key_dir }}/{{ domain }}.key \
+        --fullchain-file {{ ssl_cert_dir }}/{{ domain }}.crt \
+        --reloadcmd "systemctl reload nginx" \
+        --ecc
+      args:
+        executable: /bin/bash
+ 
+    - name: Configure Nginx with HTTP to HTTPS redirect and modern SSL settings
+      copy:
+        dest: /etc/nginx/sites-available/{{ domain }}
+        content: |
+          # HTTP to HTTPS Redirect
+          server {
+              listen 80 default_server;
+              listen [::]:80 default_server;
