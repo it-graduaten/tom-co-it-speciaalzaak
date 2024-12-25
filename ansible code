@@ -1,4 +1,5 @@
 ---
+-Versie 2
 - name: Setup Docker containers for Nextcloud and Rocket.Chat
   hosts: localhost
   become: true
@@ -16,6 +17,10 @@
         state: started
         enabled: yes
 
+    - name: Create Docker network
+      docker_network:
+        name: rocketchat_network
+
     - name: Pull Nextcloud image
       docker_image:
         name: nextcloud
@@ -25,28 +30,6 @@
       docker_image:
         name: rocketchat/rocket.chat
         source: pull
-
-    - name: Run Nextcloud container
-      docker_container:
-        name: nextcloud
-        image: nextcloud
-        state: started
-        ports:
-          - "8080:80"
-        volumes:
-          - /var/nextcloud:/var/www/html
-
-    - name: Run Rocket.Chat container
-      docker_container:
-        name: rocketchat
-        image: rocketchat/rocket.chat
-        state: started
-        ports:
-          - "3000:3000"
-        env:
-          MONGO_URL: "mongodb://mongo:27017/rocketchat"
-          ROOT_URL: "http://localhost:3000"
-          PORT: "3000"
 
     - name: Pull MongoDB image
       docker_image:
@@ -62,3 +45,39 @@
           - "27017:27017"
         volumes:
           - /var/mongo:/data/db
+        networks:
+          - name: rocketchat_network
+
+    - name: Wait for MongoDB to be ready
+      wait_for:
+        host: localhost
+        port: 27017
+        delay: 10
+        timeout: 300
+        state: started
+
+    - name: Run Nextcloud container
+      docker_container:
+        name: nextcloud
+        image: nextcloud
+        state: started
+        ports:
+          - "8080:80"
+        volumes:
+          - /var/nextcloud:/var/www/html
+        networks:
+          - name: rocketchat_network
+
+    - name: Run Rocket.Chat container
+      docker_container:
+        name: rocketchat
+        image: rocketchat/rocket.chat
+        state: started
+        ports:
+          - "3000:3000"
+        env:
+          MONGO_URL: "mongodb://mongo:27017/rocketchat"
+          ROOT_URL: "http://localhost:3000"
+          PORT: "3000"
+        networks:
+          - name: rocketchat_network@
