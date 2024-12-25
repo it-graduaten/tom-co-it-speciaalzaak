@@ -1,0 +1,64 @@
+---
+- name: Setup Docker containers for Nextcloud and Rocket.Chat
+  hosts: localhost
+  become: true
+
+  tasks:
+    - name: Ensure Docker is installed
+      apt:
+        name: docker.io
+        state: present
+        update_cache: yes
+
+    - name: Ensure Docker is running
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Pull Nextcloud image
+      docker_image:
+        name: nextcloud
+        source: pull
+
+    - name: Pull Rocket.Chat image
+      docker_image:
+        name: rocketchat/rocket.chat
+        source: pull
+
+    - name: Run Nextcloud container
+      docker_container:
+        name: nextcloud
+        image: nextcloud
+        state: started
+        ports:
+          - "8080:80"
+        volumes:
+          - /var/nextcloud:/var/www/html
+
+    - name: Run Rocket.Chat container
+      docker_container:
+        name: rocketchat
+        image: rocketchat/rocket.chat
+        state: started
+        ports:
+          - "3000:3000"
+        env:
+          MONGO_URL: "mongodb://mongo:27017/rocketchat"
+          ROOT_URL: "http://localhost:3000"
+          PORT: "3000"
+
+    - name: Pull MongoDB image
+      docker_image:
+        name: mongo
+        source: pull
+
+    - name: Run MongoDB container for Rocket.Chat
+      docker_container:
+        name: mongo
+        image: mongo
+        state: started
+        ports:
+          - "27017:27017"
+        volumes:
+          - /var/mongo:/data/db
